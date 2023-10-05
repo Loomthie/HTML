@@ -104,7 +104,7 @@ class MER:
         for t in self.crit_Ts:
             fig.add_trace(
                 go.Scatter(
-                    x=['C1',f'H{j-1}'],
+                    x=[self.heated_streams[0].Name,self.cooled_streams[-1].Name],
                     y=2*[t],
                     line=dict(
                         color='#000',
