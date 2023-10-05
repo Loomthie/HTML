@@ -10,7 +10,17 @@ class Therm_Stream:
         self.T_out = T_out
         self.mCp = mCp
         self.dTemp = self.T_out - self.T_in
-        self.Enthalpy = abs(self.dTemp*self.mCp)
+        self.Enthalpy = self.dTemp*self.mCp
+
+    def __repr__(self):
+        return f'''
+Stream - {self.Name}:
+    Current Temperature = {self.T_in}
+    Target Temperature  = {self.T_out}
+    mCp                 = {self.mCp}
+    Delta Temperature   = {self.dTemp}
+    Enthalpy            = {self.Enthalpy}
+'''
 
 
 class MER:
