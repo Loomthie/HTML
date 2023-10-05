@@ -22,7 +22,7 @@ class MER:
         self.res = self.__MER()
 
     def __MER(self):
-        adj_c_strm = [Therm_Stream(a.T_in - self.t_min,a.T_out-self.t_min,a.mCp) for a in self.cooled_streams]
+        adj_c_strm = [Therm_Stream(a.Name,a.T_in - self.t_min,a.T_out-self.t_min,a.mCp) for a in self.cooled_streams]
         self.adj_cooled_streams = adj_c_strm
 
         crit_Ts = [*[a.__dict__[key] for key in ['T_in','T_out'] for a in self.heated_streams],
