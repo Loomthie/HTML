@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from __correlations import fl_corr
-from ..Economics import Currency
+from Currency import Currency
 
 
 class Material:
@@ -37,11 +37,9 @@ class Module:
         self.name = Name
         self.desc = Desc
         self.baseCost = self.base_cost_calc()
-        self.purchCost = self.purch_cost_calc()
         self.bmCost = self.bm_cost_calc()
 
         self.updatedBaseCost = self.updated_cost(self.baseCost)
-        self.updatedPurchCost = self.updated_cost(self.purchCost)
         self.updatedBmCost = self.updated_cost(self.bmCost)
 
 
@@ -51,9 +49,6 @@ class Module:
     def bm_cost_calc(self):
         return Currency(0)
 
-    def purch_cost_calc(self):
-        return Currency(0)
-
     def updated_cost(self,cost:Currency):
         return cost*(self.CE/self.baseCE)
 
@@ -61,12 +56,10 @@ class Module:
         return f'''
     CE = {self.baseCE}
     Base Cost     = {self.baseCost}
-    Purchase Cost = {self.purchCost}
     BM Cost       = {self.bmCost}
 
     CE = {self.CE}
     Base Cost     = {self.updatedBaseCost}
-    Purchase Cost = {self.updatedPurchCost}
     BM Cost       = {self.updatedBmCost}
 '''
 
@@ -128,13 +121,8 @@ class HeatExchanger(Module):
 
         return base_calc(self.area,*coeffs[self.hxType])
 
-    @Currency.Economize
     def bm_cost_calc(self):
-        return self.purchCost*(self.Fbm+(self.Fd*self.Fm*self.Fp-1))
-
-    @Currency.Economize
-    def purch_cost_calc(self):
-        return self.Fp*self.Fm*self.Fl*self.baseCost
+        return self.baseCost*(self.Fbm+(self.Fd*self.Fp*self.Fm-1))
 
 
 class Pump(Module):
@@ -172,8 +160,6 @@ class Pump(Module):
                                  +.071413*np.log(self.powerConsumption)**3-.0063788*np.log(self.powerConsumption)**4)
         self.__pump_cost = np.exp(12.1656-1.1448*np.log(self.size_fac)+.0862*np.log(self.size_fac)**2)
 
-        print(self.etaM)
-
         super().__init__(Name,Desc)
 
     @Currency.Economize
@@ -181,12 +167,8 @@ class Pump(Module):
         return self.__motor_cost + self.__pump_cost
 
     @Currency.Economize
-    def purch_cost_calc(self):
-        return self.__motor_cost*self.FT_motor + self.__pump_cost*self.FT_pump*self.Fm
-
-    @Currency.Economize
     def bm_cost_calc(self):
-        return self.purchCost * self.Fbm
+        return self.baseCost * self.Fbm
 
 
 class TrayTypes:
@@ -246,9 +228,6 @@ class Column(Module):
         return self.Cshell+self.Cpl+self.Ctrays
 
     @Currency.Economize
-    def purch_cost_calc(self):
-        return self.Cshell+self.Cpl+self.Ctrays
-    @Currency.Economize
     def bm_cost_calc(self):
         shell = self.Cshell*(self.Fbm+(self.Fd*self.Fm*self.Fp-1))
         tray = self.Ctrays*self.Fbm_trays
@@ -307,10 +286,6 @@ class Vessel(Module):
 
     @Currency.Economize
     def base_cost_calc(self):
-        return self.Cshell+self.Cpl
-
-    @Currency.Economize
-    def purch_cost_calc(self):
         return self.Cshell+self.Cpl
 
     @Currency.Economize

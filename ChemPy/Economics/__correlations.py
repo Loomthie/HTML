@@ -1,5 +1,4 @@
 import numpy as np
-import plotly.graph_objects as go
 
 tl = np.array([8,12,16,20])
 fl = np.array([1.25,1.12,1.05,1.00])

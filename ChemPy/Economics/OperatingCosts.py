@@ -1,5 +1,4 @@
-from ..Economics import Currency
-
+from Currency import Currency
 
 class OperatingCosts:
     pass
