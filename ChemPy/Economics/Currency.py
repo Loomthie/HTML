@@ -1,6 +1,8 @@
+import numpy as np
+
 class Currency:
 
-    mode = 0
+    mode = None
     unit = '$'
 
     def __init__(self, value, unit:str|None=None, mode:int|None=None):
@@ -13,6 +15,7 @@ class Currency:
         self.value = value
         if unit: self.unit = unit
         if mode: self.mode = mode
+        elif not self.mode: self.mode = int(np.log(self.value)//np.log(1e3)) if self.value != 0 else 0
 
     def __repr__(self):
         return f'{self.unit}{self.value / 10 ** (3 * self.mode):0.2f} {"".join(self.mode * ["M"])}' \
@@ -23,19 +26,29 @@ class Currency:
             if self.unit != other.unit:
                 raise ValueError()
             return Currency(self.value + other.value)
-        return Currency(self.value + float(other), self.unit, self.mode)
+        return Currency(self.value + float(other), self.unit)
 
     def __radd__(self, other):
         return self.__add__(other)
 
     def __mul__(self, other):
-        return Currency(self.value * other, self.unit, self.mode)
+        return Currency(self.value * other, self.unit)
 
     def __rmul__(self, other):
         return self.__mul__(other)
 
+    def __sub__(self,other):
+        return Currency(self.value-other.value,self.unit) if isinstance(other,Currency) else\
+            Currency(self.value-other,self.unit)
+
     def __float__(self):
         return float(self.value)
+
+    def __truediv__(self, other):
+        return Currency(self.value/other,self.unit)
+
+    def __rtruediv__(self, other):
+        return Currency(other/self.value,self.unit)
 
     @classmethod
     def Economize(cls,f):
