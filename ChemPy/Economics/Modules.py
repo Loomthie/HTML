@@ -140,10 +140,12 @@ class Pump(Module):
     }
 
     Fbm = 3.30
+    Fd = 1.0
+    Fp = 1.0
 
-    def __init__(self, Name, Desc, Q, H, FT_pump, FT_motor, PT, Matl:str):
-        self.flow = Q
-        self.height = H
+    def __init__(self, Name, Desc, Flow:float, Height:float, FT_pump, FT_motor, PT, Matl:str=Material.CastIron):
+        self.flow = Flow
+        self.height = Height
         self.pumpPower = PT
         self.material = Matl
 
@@ -156,19 +158,22 @@ class Pump(Module):
         self.etaM = 0.8+.0319*np.log(self.pumpBreak)-.00182*np.log(self.pumpBreak)**2
         self.powerConsumption = self.pumpPower/(self.etaP*self.etaM)
 
-        self.__motor_cost = np.exp(5.9332+0.16829*np.log(self.powerConsumption)-.110056*np.log(self.powerConsumption)**2\
-                                 +.071413*np.log(self.powerConsumption)**3-.0063788*np.log(self.powerConsumption)**4)
-        self.__pump_cost = np.exp(12.1656-1.1448*np.log(self.size_fac)+.0862*np.log(self.size_fac)**2)
+        self.costMotor = np.exp(5.9332 + 0.16829 * np.log(self.powerConsumption) - .110056 * np.log(self.powerConsumption) ** 2 \
+                                + .071413 * np.log(self.powerConsumption) ** 3 - .0063788 * np.log(self.powerConsumption) ** 4)*self.FT_motor
+        self.costPump = np.exp(12.1656 - 1.1448 * np.log(self.size_fac) + .0862 * np.log(self.size_fac) ** 2)*self.FT_pump*self.Fm
 
         super().__init__(Name,Desc)
 
+        self.costMotor = Currency(self.costMotor)
+        self.costPump = Currency(self.costPump)
+
     @Currency.Economize
     def base_cost_calc(self):
-        return self.__motor_cost + self.__pump_cost
+        return self.costMotor + self.costPump
 
     @Currency.Economize
     def bm_cost_calc(self):
-        return self.baseCost * self.Fbm
+        return self.baseCost * (self.Fbm + (self.Fd*self.Fp*self.Fm-1))
 
 
 class TrayTypes:
@@ -182,6 +187,7 @@ class Column(Module):
     Fbm = 4.16
     Ftm = 1.0
     Fm = 1.0
+    Fm_tray = 1.0
     Fd=1.0
     Fp=1.0
 
@@ -209,6 +215,7 @@ class Column(Module):
         self.length=Length
         self.weight=Weight
         self.nTrays=nTrays
+        self.traySpace = TraySpacing
 
         self.Fnt = 1 if self.nTrays >= 20 else 2.25/(1.0414**self.nTrays)
         self.Ftt = self.Ftt_vals[TrayType]
@@ -223,6 +230,10 @@ class Column(Module):
 
         super().__init__(Name,Desc)
 
+        self.Cshell = Currency(self.Cshell)
+        self.Cpl = Currency(self.Cpl)
+        self.Ctrays = Currency(self.Ctrays)
+
     @Currency.Economize
     def base_cost_calc(self):
         return self.Cshell+self.Cpl+self.Ctrays
@@ -231,7 +242,6 @@ class Column(Module):
     def bm_cost_calc(self):
         shell = self.Cshell*(self.Fbm+(self.Fd*self.Fm*self.Fp-1))
         tray = self.Ctrays*self.Fbm_trays
-        print(shell)
         return shell+tray+self.Cpl
 
 
@@ -284,6 +294,9 @@ class Vessel(Module):
 
         super().__init__(Name,Desc)
 
+        self.Cshell = Currency(self.Cshell)
+        self.Cpl = Currency(self.Cpl)
+
     @Currency.Economize
     def base_cost_calc(self):
         return self.Cshell+self.Cpl
@@ -291,3 +304,11 @@ class Vessel(Module):
     @Currency.Economize
     def bm_cost_calc(self):
         return self.Cshell*(self.Fbm+(self.Fd*self.Fm*self.Fp-1)) + self.Cpl
+
+
+class Reactor(Vessel):
+
+    def __init__(self,Name:str,Desc:str,Diameter:float,Length:float,Weight:float,
+                 Orientation:str,Material:str):
+
+        super().__init__(Name,Desc,Diameter,Length,Weight,Orientation,Material)
