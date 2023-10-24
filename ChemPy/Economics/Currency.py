@@ -1,11 +1,13 @@
 import numpy as np
 
+
 class Currency:
 
     mode = None
     unit = '$'
 
     def __init__(self, value, unit:str|None=None, mode:int|None=None):
+
         if isinstance(value,Currency):
             self.value=value.value
             self.unit=value.unit
@@ -50,9 +52,20 @@ class Currency:
     def __rtruediv__(self, other):
         return Currency(other/self.value,self.unit)
 
+    def update_cost(self,newCE,baseCE):
+        return self*newCE/baseCE
+
     @classmethod
     def Economize(cls,f):
         def new_f(x):
             return cls(f(x))
+
+        return new_f
+
+    @classmethod
+    def econ_func(cls,f):
+
+        def new_f(*args):
+            return cls(f(*args))
 
         return new_f

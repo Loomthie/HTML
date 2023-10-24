@@ -1,395 +1,466 @@
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
-from ChemPy.Economics.__correlations import fl_corr
 from ChemPy.Economics.Currency import Currency
-from ChemPy.Economics.Materials import *
+from ChemPy.Economics.Materials import Catalyst,SteamStream
+import numpy as np
 
 
 class Module:
-    CE = 809
-    baseCE = 567
+    Fbm = 1.0
+    Fp = 1.0
+    Fd = 1.0
+    Fm = 1.0
+    corrCE = 567
+    xlHeader=[]
 
-    def __init__(self,Name:str,Desc:str):
-        self.name = Name
-        self.desc = Desc
+    def __init__(self,name:str,desc:str):
+
+        self.name = name
+        self.desc = desc
+
         self.baseCost = self.base_cost_calc()
+        self.purchCost = self.purch_cost_calc()
         self.bmCost = self.bm_cost_calc()
 
-        self.updatedBaseCost = self.updated_cost(self.baseCost)
-        self.updatedBmCost = self.updated_cost(self.bmCost)
+    def generate_row_xl(self):
+        return self.baseCost,self.purchCost,self.bmCost
 
-
+    @Currency.econ_func
     def base_cost_calc(self):
-        return Currency(0)
+        return 0
 
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return 0
+
+    @Currency.econ_func
     def bm_cost_calc(self):
-        return Currency(0)
-
-    def updated_cost(self,cost:Currency):
-        return cost*(self.CE/self.baseCE)
-
-    def __repr__(self):
-        return f'''
-    CE = {self.baseCE}
-    Base Cost     = {self.baseCost}
-    BM Cost       = {self.bmCost}
-
-    CE = {self.CE}
-    Base Cost     = {self.updatedBaseCost}
-    BM Cost       = {self.updatedBmCost}
-'''
+        return self.purchCost*(self.Fbm+(self.Fd*self.Fm*self.Fp-1))
 
 
-class HeatExchangerType:
-    Fixed_Head = 'Fixed Head'
-    Floating_Head = 'Floating Head'
-    U_Tube = 'U Tube'
-    Kettle = 'Kettle'
-
-
-class HeatExchanger(Module):
-    Fm_coeffs = pd.DataFrame({
-        Material.CarbonSteel:[(0,0),(1.08,.05),(1.75,0.13),(2.1,1.13),(5.2,0.16),(1.55,0.05)],
-        Material.Brass:[(1.08,.05),*5*[np.NaN]],
-        Material.StainlessSteel:[(1.75,0.13),np.NaN,(2.7,.07),*3*[np.NaN]],
-        Material.Monel:[(2.1,0.13),*2*[np.NaN],(3.3,.08),*2*[np.NaN]],
-        Material.Titanium:[(5.2,.016),*3*[np.NaN],(9.6,.06),np.NaN],
-        Material.CrMoSteel:[(1.55,.05),*4*[np.NaN],(1.70,.07)]
-    },index=[Material.CarbonSteel,Material.Brass,Material.StainlessSteel,Material.Monel,Material.Titanium,Material.CrMoSteel])
-    Fbm = 3.17
-    Fd_vals = {
-        HeatExchangerType.Fixed_Head:0.85,
-        HeatExchangerType.Floating_Head:1.00,
-        HeatExchangerType.Kettle:1.35,
-        HeatExchangerType.U_Tube:0.85
-    }
-    Fm = 1
-
-    def __init__(self,Name,Desc,Pressure:float,Tube_Length:float,Area:float,
-                 Hx_Type:str,steam_stream:SteamStream|None=None,TW_Flow:float=0,**kwargs):
-
-        for key,value in kwargs.items(): self.__dict__[key]=value
-
-        self.steamStream = steam_stream if steam_stream else SteamStream(0,0,0)
-        self.twFlow = TW_Flow
-
-        self.pres = Pressure
-        self.tubeLength = Tube_Length
-        # self.material = [Matl_A,Matl_B]
-        self.area = Area
-        self.hxType = Hx_Type
-
-        self.Fd = self.Fd_vals[Hx_Type]
-        self.Fp = 0.9803 + 0.018 * Pressure / 100 + .0017 * (Pressure / 100) ** 2
-        self.Fp = self.Fp if self.Fp > 1 else 1
-        self.Fl = fl_corr(self.tubeLength)
-        # self.Fm = self.Fm_coeffs.loc[*self.material][0] + (self.area / 100) ** self.Fm_coeffs.loc[*self.material][1]
-
-        super().__init__(Name,Desc)
-
-    @Currency.Economize
-    def base_cost_calc(self):
-
-        hx = HeatExchangerType()
-
-        coeffs = {
-            hx.Floating_Head:[12.0310,0.8709,0.09005],
-            hx.Fixed_Head:[11.4185,0.9228,0.09861],
-            hx.U_Tube:[11.5510,0.9186,0.09790],
-            hx.Kettle:[12.3310,0.8709,0.09005]
-        }
-
-        def base_calc(A,a,b,c):
-            return np.exp(a-b*np.log(A)+c*np.log(A)**2)
-
-        return base_calc(self.area,*coeffs[self.hxType])
-
-    def bm_cost_calc(self):
-        return self.baseCost*(self.Fbm+(self.Fd*self.Fp*self.Fm-1))
-
-
-class FiredHeater(Module):
-    Fbm = 2.19
-    Fd = 1
-    Fm = 1
-
-    def __init__(self,Name,Desc,pres,heat_load,ng_flow):
-
-        self.pres = pres
-        self.heatLoad = heat_load
-        self.ngFlow = ng_flow
-
-        self.Fp = 0.9803+0.018*(pres/100)+.0017*(pres/100)**2
-        self.Fp = self.Fp if self.Fp > 1 else self.Fp
-
-        super().__init__(Name,Desc)
-
-    @Currency.Economize
-    def base_cost_calc(self):
-        return np.exp(-0.15241+0.785*np.log(self.heatLoad*1e6))
-
-    @Currency.Economize
-    def bm_cost_calc(self):
-        return self.baseCost*(self.Fbm+(self.Fd*self.Fm*self.Fp-1))
-
-
+# region Pump
 class Pump(Module):
 
-    Fm_vals = {
-        Material.CastIron:1.,
-        Material.DuctIron:1.15,
-        Material.CastSteel:1.35,
-        Material.Bronze:1.9,
-        Material.StainlessSteel:2.0,
-        Material.HastelloyC:2.95,
-        Material.Monel:3.3,
-        Material.Nickel:3.5,
-        Material.Titanium:9.70
-    }
-
     Fbm = 3.30
-    Fd = 1.0
-    Fp = 1.0
+    xlHeader=['Name','Flow','Head','Size Factor','Pump Cost','Pump Power','Pump Efficiency','Brake Power',
+              'Motor Efficiency','Power Consumption','Motor Cost','Cbase','Cp','Fbm','Fm','Fd','Fp','Cbm']
 
-    def __init__(self, Name, Desc, Flow:float, Height:float,PumpPower:float, FT_pump=1.35, FT_motor=1.8, Matl:str=Material.CastIron):
-        self.flow = Flow
-        self.height = Height
-        self.pumpPower = PumpPower
-        self.material = Matl
+    def __init__(self,name:str,desc:str,flow_rate:float,pump_power:float,type_factor_pump:float=1.0,
+                 type_factor_motor:float=1.0,**kwargs):
 
-        self.size_fac = self.flow*self.height ** 0.5
-        self.FT_pump = FT_pump
-        self.FT_motor = FT_motor
-        self.Fm = self.Fm_vals[self.material]
-        self.etaP = -0.316+0.24015*np.log(self.flow)-0.01199*np.log(self.flow)**2
-        self.pumpBreak = self.pumpPower/self.etaP
-        self.etaM = 0.8+.0319*np.log(self.pumpBreak)-.00182*np.log(self.pumpBreak)**2
-        self.powerConsumption = self.pumpPower/(self.etaP*self.etaM)
+        for key,val in kwargs.items():self.__dict__[key]=val
 
-        self.costMotor = np.exp(5.9332 + 0.16829 * np.log(self.powerConsumption) - .110056 * np.log(self.powerConsumption) ** 2 \
-                                + .071413 * np.log(self.powerConsumption) ** 3 - .0063788 * np.log(self.powerConsumption) ** 4)*self.FT_motor
-        # 12.1656 - 1.1448 * LN(D19) + 0.0862 * LN(D19) ^ 2
-        self.costPump = np.exp(12.1656 - 1.1448 * np.log(self.size_fac) + 0.0862 * np.log(self.size_fac) ** 2)*self.FT_pump*self.Fm
+        self.Q = flow_rate
+        self.Pt = pump_power
+        self.Ft = type_factor_pump
+        self.motorFt = type_factor_motor
 
-        super().__init__(Name,Desc)
+        self.etaP = -0.316+0.24015*np.log(self.Q)-0.01199*np.log(self.Q)**2
+        self.Pb = self.Pt/self.etaP
+        self.etaM = 0.8+0.0319*np.log(self.Pb)-0.00182*np.log(self.Pb)**2
+        self.Pc = self.Pt/self.etaP/self.etaM
 
-        self.costMotor = Currency(self.costMotor)
-        self.costPump = Currency(self.costPump)
+        self.motorBaseCost = self.motor_base_cost_calc()
+        self.motorPurchCost = self.motor_purch_cost_calc()
+        self.pumpBaseCost = self.pump_base_cost_calc()
+        self.pumpPurchCost = self.pump_purch_cost_calc()
 
-    @Currency.Economize
+        super().__init__(name,desc)
+
+    def generate_row_xl(self):
+        return [self.name,self.Q,'\'--','\'--',self.pumpPurchCost,self.Pt,self.etaP,self.Pb,self.etaM,self.Pc,self.motorPurchCost,
+                self.baseCost,self.purchCost,self.Fbm,self.Fd,self.Fm,self.Fp,self.bmCost]
+
+    @Currency.econ_func
+    def motor_base_cost_calc(self):
+        return np.exp(5.9332+0.16829*np.log(self.Pc)-0.110056*np.log(self.Pc)**2+\
+                      0.071413*np.log(self.Pc)**3-0.0063788*np.log(self.Pc)**4)
+
+    @Currency.econ_func
+    def motor_purch_cost_calc(self):
+        return self.motorBaseCost*self.motorFt
+
+    @Currency.econ_func
+    def pump_base_cost_calc(self):
+        return 0
+
+    @Currency.econ_func
+    def pump_purch_cost_calc(self):
+        return self.pumpBaseCost*self.Ft*self.Fm
+
+    @Currency.econ_func
     def base_cost_calc(self):
-        return self.costMotor + self.costPump
+        return self.pumpBaseCost+self.motorBaseCost
 
-    @Currency.Economize
-    def bm_cost_calc(self):
-        return self.baseCost * (self.Fbm + (self.Fd*self.Fp*self.Fm-1))
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return self.pumpPurchCost+self.motorPurchCost
 
 
+class CentrifugalPump(Pump):
+
+    def __init__(self,name,desc,flow_rate,pump_power,head:float,type_factor=1.0,motor_type_factor=1.0,**kwargs):
+
+        self.S = flow_rate * np.sqrt(head) # size factor
+        self.H = head
+
+        super().__init__(name,desc,flow_rate,pump_power,type_factor,motor_type_factor,**kwargs)
+
+    @Currency.econ_func
+    def pump_base_cost_calc(self):
+        return np.exp(12.1656-1.1448*np.log(self.S)+0.0862*np.log(self.S)**2)
+
+    def generate_row_xl(self):
+        res = super().generate_row_xl()
+        res[2] = self.H
+        res[3] = self.S
+        return res
+
+
+class ExternalGearPump(Pump):
+
+    @Currency.econ_func
+    def pump_base_cost_calc(self):
+        return np.exp(8.2816-0.2918*np.log(self.Q)+0.0743*np.log(self.Q)**2)
+
+
+class ReciprocatingPlungerPump(Pump):
+
+    @Currency.econ_func
+    def pump_base_cost_calc(self):
+        return np.exp(7.9361+0.26986*np.log(self.Pb)+0.06718*np.log(self.Pb)**2)
+# endregion
+
+#region Compressor
 class Compressor(Module):
 
+    xlHeader = ['Name','Pt','ηP','ηM','Pc','Cb','Cp','Fbm','Fm','Fd','Fp','Cbm']
     Fbm = 2.15
-    Fd=Fm=Fp=1
 
-    def __init__(self,Name,Desc,Power_Hp,**kwargs):
-
+    def __init__(self,name,desc,pump_power,comp_eff=0.75,motor_eff=1.0,**kwargs):
         for key,val in kwargs.items(): self.__dict__[key]=val
+        self.Pt = pump_power
+        self.etaP = comp_eff
+        self.etaM = motor_eff
+        self.Pc = self.Pt/self.etaP/self.etaM
+        super().__init__(name,desc)
 
-        self.Pt = Power_Hp
-        self.Pc = self.Pt/0.75
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return self.baseCost*self.Fd*self.Fm
 
-        super().__init__(Name,Desc)
+    def generate_row_xl(self):
+        return [self.name,self.Pt,self.etaP,self.etaM,self.Pc,self.baseCost,self.purchCost,
+                self.Fbm,self.Fm,self.Fd,self.Fp,self.bmCost]
 
-    @Currency.Economize
+
+class CentrifugalCompressor(Compressor):
+
+    @Currency.econ_func
     def base_cost_calc(self):
         return np.exp(9.1553+0.63*np.log(self.Pc))
 
-    @Currency.Economize
-    def bm_cost_calc(self):
-        return self.baseCost*(self.Fbm+(self.Fd*self.Fm*self.Fp-1))
+
+class ReciprocatingCompressor(Compressor):
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(4.6762+1.23*np.log(self.Pc))
 
 
-class TrayTypes:
-    Sieve='Sieve'
-    Valve='Valve'
-    BubbleCap='Bubble Cap'
+class ScrewCompressor(Compressor):
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(8.2496+0.7243*np.log(self.Pc))
+#endregion
+
+#region Fan
+class Fan(Module):
+
+    def __init__(self,name,desc,head_factor:float,flow_rate:float,
+                 head:float,fan_eff=0.7,motor_eff=0.9,**kwargs):
+
+        for key,val in kwargs.items(): self.__dict__[key]=val
+
+        self.Fh = head_factor
+        self.Q = flow_rate
+        self.H = head
+        self.etaF = fan_eff
+        self.etaM = motor_eff
+
+        self.Pc = self.Q * self.H / (6350*self.etaF*self.etaM)
+
+        super().__init__(name,desc)
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return self.baseCost*self.Fh*self.Fm
+
+    def generate_row_xl(self):
+        return [self.name,self.Q,self.H,self.Fh,self.etaF,self.etaM,self.Pc,self.baseCost,self.purchCost,
+                self.Fbm,self.Fm,self.Fd,self.Fp,self.bmCost]
+
+
+class CentrifugalBackwardFan(Fan):
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(11.4152-1.3805*np.log(self.Q)+0.1139*np.log(self.Q)**2)
+
+
+class CentrifugalStraightFan(Fan):
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(12.1667-1.6407*np.log(self.Q)+0.1328*np.log(self.Q)**2)
+
+
+class VaneAxialFan(Fan):
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(9.6487-0.97566*np.log(self.Q)+0.08532*np.log(self.Q)**2)
+
+
+class PropellerFan(Fan):
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(6.16328-0.28635*np.log(self.Q)+0.04866*np.log(self.Q)**2)
+#endregion
+
+# region Heat Exchanger/Fired Heater
+
+
+class HeatExchanger(Module):
+
+    Fbm = 3.17
+    fl_dict = {
+        8:1.25,
+        12:1.12,
+        16:1.05,
+        20:1.0
+    }
+
+    twVolFlow = 0  # gpm
+    twMassFlow = 0  # lb/h
+    steamStream = SteamStream(0, 0, 0)
+
+    xlHeader = ['Name','P','Fp','Tube Length','Area','Fl','Cb','Cp','Fbm','Fm','Fd','Cbm']
+
+    def __init__(self,name,desc,tube_length,pressure,area,a=0.0,b=0.0,**kwargs):
+        for key,value in kwargs.items():self.__dict__[key]=value
+
+        self.tubeLength = tube_length
+        self.P = pressure
+        self.A = area
+
+        self.Fm = a+(self.A/100)**b
+        self.Fl = self.fl_func(tube_length) if tube_length not in self.fl_dict else self.fl_dict[tube_length]
+        self.Fp = 0.9803+0.018*(self.P/100)+0.0017*(self.P/100)**2
+
+        self.Fp = self.Fp if self.Fp > 1 else 1
+
+        super().__init__(name,desc)
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return self.Fp*self.Fm*self.Fl*self.baseCost
+
+    def generate_row_xl(self):
+        return [self.name,self.P,self.Fp,self.tubeLength,self.A,self.Fl,self.baseCost,self.purchCost,
+                self.Fbm,self.Fm,self.Fd,self.bmCost]
+
+    @staticmethod
+    def fl_func(L):
+        tl = np.array([8, 12, 16, 20])
+        fl = np.array([1.25, 1.12, 1.05, 1.00])
+
+        fl_y = fl * tl
+        fl_x = np.array([tl, np.ones_like(tl), -fl]).T
+
+        res_fl = np.linalg.solve(fl_x.T @ fl_x, fl_x.T @ fl_y)
+        res_fl[1] -= res_fl[0] * res_fl[2]
+
+        def fl_corr(L):
+            return res_fl[0] + res_fl[1] / (L + res_fl[2])
+
+        return fl_corr(L)
+
+
+class FloatingHeadHx(HeatExchanger):
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(12.0310-0.8709*np.log(self.A)+0.09005*np.log(self.A)**2)
+
+
+class FixedHeadHx(HeatExchanger):
+
+    Fd=0.85
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(11.4185-0.9228*np.log(self.A)+0.09861*np.log(self.A)**2)
+
+
+class UtubeHx(HeatExchanger):
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(11.5510-0.9186*np.log(self.A)+0.09790*np.log(self.A)**2)
+
+
+class KettleHx(HeatExchanger):
+
+    Fd = 1.35
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(12.3310-0.8709*np.log(self.A)+0.09005*np.log(self.A)**2)
+
+
+class FiredHeater(Module):
+
+    ngFlow = 0
+
+    def __init__(self,name,desc,heat_duty,pressure,**kwargs):
+        for key,value in kwargs.items(): self.__dict__[key]=value
+        self.Q = heat_duty
+        self.P = pressure
+        self.Fp = 0.986-0.0035*(self.P/500)+0.0175*(self.P/500)**2
+        super().__init__(name,desc)
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return np.exp(-0.15241+0.785*np.log(self.Q))
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return self.Fp*self.Fm*self.baseCost
+
+    def generate_row_xl(self):
+        return [self.name,self.Fp,self.Q,self.baseCost,self.purchCost,
+                self.Fbm,self.Fm,self.Fd,self.bmCost]
+# endregion
+
+
+# region Vessel
+class Vessel(Module):
+
+    def __init__(self,name,desc,weight,inside_diameter,**kwargs):
+        for key,val in kwargs.items(): self.__dict__[key]=val
+
+        self.Di = inside_diameter
+        self.W = weight
+
+        self.Cv = self.shell_cost_calc()
+        self.Cpl = self.pl_cost_calc()
+
+        super().__init__(name,desc)
+
+    @Currency.econ_func
+    def pl_cost_calc(self):
+        return 0
+
+    @Currency.econ_func
+    def shell_cost_calc(self):
+        return 0
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return self.Fm*self.Cv+self.Cpl
+
+
+class HorizontalVessel(Vessel):
+
+    @Currency.econ_func
+    def shell_cost_calc(self):
+        return np.exp(5.6336+0.4599*np.log(self.W)+0.00582*np.log(self.W)**2)
+
+    @Currency.econ_func
+    def pl_cost_calc(self):
+        return 2275*self.Di**0.2094
+
+
+class VerticalVessel(Vessel):
+    Fbm = 4.16
+
+    def __init__(self,name,desc,weight,inside_diameter,length,**kwargs):
+
+        self.L = length
+
+        super().__init__(name,desc,weight,inside_diameter,**kwargs)
+
+    @Currency.econ_func
+    def shell_cost_calc(self):
+        return np.exp(7.1390+0.18255*np.log(self.W)+0.02297*np.log(self.W)**2)
+
+    @Currency.econ_func
+    def pl_cost_calc(self):
+        return 410*self.Di**0.7396*self.L**0.70684
 
 
 class Column(Module):
 
+    xlHeader = ['Name','D','L','W','N','FNT','Cshell','Cpl','Ct','Ctower','Fbm','Fd','Fm','Fp','Cbm']
     Fbm = 4.16
-    Ftm = 1.0
-    Fm = 1.0
-    Fm_tray = 1.0
-    Fd=1.0
-    Fp=1.0
 
-    Ft_vals = {
-        TrayTypes.Sieve:0.,
-        TrayTypes.Valve:0.4,
-        TrayTypes.BubbleCap:1.8
-    }
+    def __init__(self,name,desc,weight,inside_diameter,length,num_trays,Ftt=1.0,
+                 Ftm=1.0,Fts=1.0,tray_Ft=0.0,**kwargs):
 
-    Ftt_vals = {
-        TrayTypes.Sieve:1.,
-        TrayTypes.Valve:1.18,
-        TrayTypes.BubbleCap:1.87
-    }
+        vves = VerticalVessel(name,desc,weight,inside_diameter,length,**kwargs)
+        self.__dict__ = vves.__dict__
 
-    Fs_vals = {
-        24:1,
-        18:1.4,
-        12:2.2
-    }
+        self.nTrays = num_trays
+        self.Fnt = 2.25/1.0414**self.nTrays if self.nTrays <= 20 else 1
+        self.Ftt = Ftt
+        self.Ftm = Ftm
+        self.trayFt = tray_Ft
+        self.Fts = Fts
 
-    def __init__(self,Name,Desc,Diameter,Length,Weight,nTrays,TrayType,TraySpacing):
-
-        self.diameter=Diameter
-        self.length=Length
-        self.weight=Weight
-        self.nTrays=nTrays
-        self.traySpace = TraySpacing
-
-        self.Fnt = 1 if self.nTrays >= 20 else 2.25/(1.0414**self.nTrays)
-        self.Ftt = self.Ftt_vals[TrayType]
-        self.Ft = self.Ft_vals[TrayType]
-        self.Fs = self.Fs_vals[TraySpacing]
-
-        self.Cshell = np.exp(10.5449-0.4672*np.log(self.weight)+.05482*np.log(self.weight)**2)
-        self.Cpl = 410*self.diameter**0.7396*self.length**0.70684
-        self.Ctrays = 468*np.exp(0.1482*self.diameter)*self.nTrays*self.Fnt
-
-        self.Fbm_trays = self.Ft+self.Fs+self.Fm
-
-        super().__init__(Name,Desc)
-
-        self.Cshell = Currency(self.Cshell)
-        self.Cpl = Currency(self.Cpl)
-        self.Ctrays = Currency(self.Ctrays)
-
-    @Currency.Economize
-    def base_cost_calc(self):
-        return self.Cshell+self.Cpl+self.Ctrays
-
-    @Currency.Economize
-    def bm_cost_calc(self):
-        shell = self.Cshell*(self.Fbm+(self.Fd*self.Fm*self.Fp-1))
-        tray = self.Ctrays*self.Fbm_trays
-        return shell+tray+self.Cpl
-
-
-class VesselOrientation:
-    Horiz ='Horizontal'
-    Vert = 'Vertical'
-
-
-class Vessel(Module):
-
-    Fm_dict = {
-        Material.CarbonSteel:1.0,
-        Material.Titanium:7.7,
-        Material.LowAlloySteel:1.2,
-        Material.StainSteel304:1.7,
-        Material.StainSteel316:2.1,
-        Material.Carp20CB3:3.2,
-        Material.Nickel200:5.4,
-        Material.Monel400:3.6,
-        Material.Inconel600:3.9,
-        Material.Incoloy825:3.7
-    }
-
-    Cv_calc = {
-        VesselOrientation.Horiz: lambda W: np.exp(5.6336+0.4559*np.log(W)+.00582*np.log(W)**2),
-        VesselOrientation.Vert: lambda W: np.exp(7.139+0.18255*np.log(W)+.02297*np.log(W)**2)
-    }
-
-    Cpl_calc = {
-        VesselOrientation.Horiz:lambda D,L: 2275*D**0.2094,
-        VesselOrientation.Vert:lambda D,L: 410*D**.73960*L**.70684
-    }
-
-    Fd = 1.0
-    Fp = 1.0
-
-    def __init__(self,Name,Desc,Diameter,Length,Weight,Orientation,Material=Material.CarbonSteel):
-
-        self.diameter = Diameter
-        self.length = Length
-        self.weight = Weight
-        self.orientation=Orientation
-        self.material = Material
-
-        self.Fm = self.Fm_dict[self.material]
-        self.Fbm = 3.05 if self.orientation == VesselOrientation.Horiz else 4.16
-
-        self.Cshell = self.Cv_calc[Orientation](self.weight)
-        self.Cpl = self.Cpl_calc[Orientation](self.diameter,self.length)
-
-        super().__init__(Name,Desc)
-
-        self.Cshell = Currency(self.Cshell)
-        self.Cpl = Currency(self.Cpl)
-
-    @Currency.Economize
-    def base_cost_calc(self):
-        return self.Cshell+self.Cpl
-
-    @Currency.Economize
-    def bm_cost_calc(self):
-        return self.Cshell*(self.Fbm+(self.Fd*self.Fm*self.Fp-1)) + self.Cpl
-
-
-class Reactor(Vessel):
-
-    LDmin = 10
-    Fm=1.5
-    S = 15e3
-    E = 0.85
-    tc = 1/8
-    f = 490
-
-    def __init__(self,Name:str,Desc:str,Volume:float,inletPressure:float,
-                 Orientation:str,catalyst:Catalyst,**kwargs):
-
-        self.vol = Volume
-        Di = (4 * self.vol / (self.LDmin * np.pi)) ** (1 / 3)
-        Length = self.LDmin * Di
-        self.catalyst = catalyst
-
-        self.Po = inletPressure
-        self.Pd = np.exp(0.60608+0.91615*np.log(self.Po)+0.0015655*np.log(self.Po)**2)
-        self.tp = (self.Pd*Di)/(2*self.S*self.E-1.2*self.Pd)
-
-        self.Do = Di + 2*self.tp
-
-        self.ts = self.tp+self.tc
-
-        Weight = np.pi*(Di+self.ts)*(Length+0.8*Di)*self.ts*self.f
-
-        super().__init__(Name,Desc,Di,Length,Weight,Orientation,Material.CarbonSteel)
-
-
-class Tank(Module):
-
-    Fbm = 4.16
-    Fd = 1
-    Fm = 1
-    Fp = 1
-
-    def __init__(self,name,desc,flow,volume,**kwargs):
-
-        for key,val in kwargs.items(): self.__dict__[key] = val
-
-        self.flow = flow
-        self.vol = volume
+        self.Cbt = Currency(468*np.exp(0.1482*inside_diameter))
+        self.Ct = self.nTrays*self.Fnt*self.Ftt*self.Ftm*self.Cbt
+        self.CtBm = self.Ct * (self.Ftm+self.Fts+self.trayFt)
 
         super().__init__(name,desc)
 
-    @Currency.Economize
-    def base_cost_calc(self):
-        return 265*self.vol**0.513
+    @Currency.econ_func
+    def shell_cost_calc(self):
+        return np.exp(10.5449-0.4672*np.log(self.W)+0.05482*np.log(self.W)**2)
 
-    @Currency.Economize
+    @Currency.econ_func
+    def pl_cost_calc(self):
+        return 341*self.Di**0.63316*self.L**0.80161
+
+    @Currency.econ_func
+    def base_cost_calc(self):
+        return self.Cv+self.Cpl+self.Cbt
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return self.Fm*self.Cv+self.Cpl
+
+    @Currency.econ_func
     def bm_cost_calc(self):
-        return self.baseCost*(self.Fbm+(self.Fm*self.Fd*self.Fp-1))
+        return super().bm_cost_calc() + self.CtBm
+
+    def generate_row_xl(self):
+        return [self.name,self.Di,self.L,self.W,self.nTrays,self.Fnt,self.Cv,self.Cpl,self.Ct,self.purchCost,
+                self.Fbm,self.Fd,self.Fm,self.Fp,self.bmCost]
+
+
+class HorizontalReactor(HorizontalVessel):
+
+    def __init__(self,name,desc,weight,inside_diameter,catalyst:Catalyst,**kwargs):
+
+        self.catalyst = catalyst
+
+        super().__init__(name,desc,weight,inside_diameter,**kwargs)
+
+
+class VerticalReactor(VerticalVessel):
+
+    def __init__(self,name,desc,weight,inside_diameter,length,catalyst:Catalyst,**kwargs):
+        self.catalyst = catalyst
+        super().__init__(name,desc,weight,inside_diameter,length,**kwargs)
+# endregion
 

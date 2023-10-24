@@ -32,7 +32,8 @@ class SteamStream:
         300:7.81,
         150:7.10,
         90:6.7,
-        30:6.07
+        30:6.07,
+        0:0
     }
 
     def __init__(self,pressure,flow,heat_load):
@@ -41,7 +42,7 @@ class SteamStream:
         self.heatLoad = heat_load
 
     def cost(self,hours):
-        return hours*self.flow*self.pres_dict[self.pres]
+        return Currency(hours*self.heatLoad*self.pres_dict[self.pres])
 
 
 class RawMaterial:
@@ -53,9 +54,13 @@ class RawMaterial:
         self.flow = flow
         self.value = self.rate*self.flow
 
+    def h_cost(self,hours:float):
+        return self.value * hours
 
-class Catalyst(RawMaterial):
+class Catalyst:
 
-    def __init__(self,name,volume,density,price_per_pound):
-
-        super().__init__(name,price_per_pound,volume*density)
+    def __init__(self,name,rate:Currency,amount):
+        self.name = name
+        self.rate = rate
+        self.amount = amount
+        self.cost = self.rate*self.amount
