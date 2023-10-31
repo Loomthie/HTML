@@ -321,6 +321,8 @@ class KettleHx(HeatExchanger):
 class FiredHeater(Module):
 
     ngFlow = 0
+    Fbm = 2.19
+    xlHeader = ['Name','Fp','Q','Cb','Cp','Fbm','Fm','Fd','Cbm']
 
     def __init__(self,name,desc,heat_duty,pressure,**kwargs):
         for key,value in kwargs.items(): self.__dict__[key]=value
@@ -369,20 +371,32 @@ class Vessel(Module):
     def purch_cost_calc(self):
         return self.Fm*self.Cv+self.Cpl
 
+    @Currency.econ_func
+    def bm_cost_calc(self):
+        return self.Cv/self.Fm*(self.Fbm+(self.Fm*self.Fd*self.Fp-1))+self.Cpl
+
 
 class HorizontalVessel(Vessel):
 
+    xlHeader = ['Name','D','W','Cv','Cpl','Fbm','Fd','Fm','Fp','Cbm']
+    Fbm=3.05
+
     @Currency.econ_func
     def shell_cost_calc(self):
-        return np.exp(5.6336+0.4599*np.log(self.W)+0.00582*np.log(self.W)**2)
+        return np.exp(5.6336+0.4599*np.log(self.W)+0.00582*np.log(self.W)**2)*self.Fm
 
     @Currency.econ_func
     def pl_cost_calc(self):
         return 2275*self.Di**0.2094
 
+    def generate_row_xl(self):
+        return [self.name,self.Di,self.W,self.Cv,self.Cpl,self.Fbm,self.Fd,self.Fm,self.Fp,self.bmCost]
+
 
 class VerticalVessel(Vessel):
     Fbm = 4.16
+
+    xlHeader = ['Name','D','L','W','Cv','Cpl','Fbm','Fm','Fd','Fp','Cbm']
 
     def __init__(self,name,desc,weight,inside_diameter,length,**kwargs):
 
@@ -398,54 +412,71 @@ class VerticalVessel(Vessel):
     def pl_cost_calc(self):
         return 410*self.Di**0.7396*self.L**0.70684
 
+    def generate_row_xl(self):
+        return [self.name,self.Di,self.L,self.W,self.Cv,self.Cpl,self.Fbm,self.Fm,
+                self.Fd,self.Fp,self.bmCost]
+
 
 class Column(Module):
 
-    xlHeader = ['Name','D','L','W','N','FNT','Cshell','Cpl','Ct','Ctower','Fbm','Fd','Fm','Fp','Cbm']
     Fbm = 4.16
+    xlHeader = ['Name','D','L','W','N','Fnt','Cv','Cpl','Ctrays','Ctower','Fbm (Trays)','Fbm (Tower)',
+                'Fm','Fd','Fp','Cbm']
 
-    def __init__(self,name,desc,weight,inside_diameter,length,num_trays,Ftt=1.0,
-                 Ftm=1.0,Fts=1.0,tray_Ft=0.0,**kwargs):
+    class Trays:
 
-        vves = VerticalVessel(name,desc,weight,inside_diameter,length,**kwargs)
-        self.__dict__ = vves.__dict__
+        Fs_dict = {
+            24:1,
+            18:1.4,
+            12:2.2
+        }
+        Ft_dict = {
+            'Sieve':0,
+            'Valve':0.4,
+            'Bubble Cap':1.8
+        }
 
-        self.nTrays = num_trays
-        self.Fnt = 2.25/1.0414**self.nTrays if self.nTrays <= 20 else 1
-        self.Ftt = Ftt
-        self.Ftm = Ftm
-        self.trayFt = tray_Ft
-        self.Fts = Fts
+        def __init__(self,num_trays,tray_spacing=24,tray_type='Sieve',Fm=1.0):
+            self.N = num_trays
+            self.traySpace = tray_spacing
+            self.trayType = tray_type
+            self.Fm = Fm
 
-        self.Cbt = Currency(468*np.exp(0.1482*inside_diameter))
-        self.Ct = self.nTrays*self.Fnt*self.Ftt*self.Ftm*self.Cbt
-        self.CtBm = self.Ct * (self.Ftm+self.Fts+self.trayFt)
+            self.Fnt = 1 if self.N > 20 else 2.25/1.0414**self.N
+            self.Fs = self.Fs_dict[tray_spacing]
+            self.Ft = self.Ft_dict[tray_type]
+
+            self.Fbm = self.Fm+self.Fs+self.Ft
+
+    def __init__(self,name,desc,diameter,length,weight,trays:Trays,**kwargs):
+
+        for key,val in kwargs.items(): self.__dict__[key] = val
+
+        self.D = diameter
+        self.L = length
+        self.W = weight
+        self.trays = trays
+
+        self.trayFactor = self.trays.N*self.trays.Fnt*self.trays.Fm
+
+        self.Cv = Currency(np.exp(10.5449-0.4672*np.log(self.W)+0.05482*np.log(self.W)**2))*self.Fm
+        self.Cpl = Currency(341*self.D**0.63316*self.L**0.80161)
+        self.Ctrays = Currency(468*np.exp(0.1482*self.D))*self.trayFactor
 
         super().__init__(name,desc)
 
-    @Currency.econ_func
-    def shell_cost_calc(self):
-        return np.exp(10.5449-0.4672*np.log(self.W)+0.05482*np.log(self.W)**2)
-
-    @Currency.econ_func
-    def pl_cost_calc(self):
-        return 341*self.Di**0.63316*self.L**0.80161
-
-    @Currency.econ_func
     def base_cost_calc(self):
-        return self.Cv+self.Cpl+self.Cbt
+        return self.Cv/self.Fm+self.Cpl+self.Ctrays/self.trayFactor
 
-    @Currency.econ_func
     def purch_cost_calc(self):
-        return self.Fm*self.Cv+self.Cpl
+        return self.Cv+self.Cpl+self.Ctrays
 
-    @Currency.econ_func
     def bm_cost_calc(self):
-        return super().bm_cost_calc() + self.CtBm
+        return self.Cv*(self.Fbm+(self.Fm*self.Fd*self.Fp-1))+self.Cpl+self.Ctrays*self.trays.Fbm
 
     def generate_row_xl(self):
-        return [self.name,self.Di,self.L,self.W,self.nTrays,self.Fnt,self.Cv,self.Cpl,self.Ct,self.purchCost,
-                self.Fbm,self.Fd,self.Fm,self.Fp,self.bmCost]
+        return [self.name,self.D,self.L,self.W,self.trays.N,self.trays.Fnt,self.Cv,self.Cpl,self.Ctrays,
+                self.purchCost,self.trays.Fbm,self.Fbm,self.Fm,self.Fd,self.Fp,self.bmCost]
 
 
 class HorizontalReactor(HorizontalVessel):
@@ -464,3 +495,65 @@ class VerticalReactor(VerticalVessel):
         super().__init__(name,desc,weight,inside_diameter,length,**kwargs)
 # endregion
 
+
+# region Tanks
+class Tank(Module):
+
+    xlHeader = ['Name','Volume','Ctank','Fbm','Fm','Fd','Fp','Cbm']
+
+    corrCE = 567
+    Fbm=4.16
+
+    def __init__(self,name,desc,volume,**kwargs):
+        for key,value in kwargs.items(): self.__dict__[key]=value
+
+        self.volume = volume
+
+        super().__init__(name,desc)
+
+    def generate_row_xl(self):
+        return [self.name,self.volume,self.purchCost,self.Fbm,self.Fm,
+                self.Fd,self.Fp,self.bmCost]
+
+
+class OpenTank(Tank):
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return 18*self.volume**0.73
+
+
+class ConeRoofTank(Tank):
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return 265*self.volume**0.513
+
+
+class FloatingRoofTank(Tank):
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return 475*self.volume**.507
+
+
+class SphericalLPTank(Tank):
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return 68*self.volume**0.72
+
+
+class SphericalHPTank(Tank):
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return 53*self.volume**0.78
+
+
+class GasHoldersTank(Tank):
+
+    @Currency.econ_func
+    def purch_cost_calc(self):
+        return 3595*(self.volume*7.48052)**0.43
+# endregion

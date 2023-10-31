@@ -17,7 +17,7 @@ class Currency:
         self.value = value
         if unit: self.unit = unit
         if mode: self.mode = mode
-        elif not self.mode: self.mode = int(np.log(self.value)//np.log(1e3)) if self.value != 0 else 0
+        elif not self.mode: self.mode = int(np.log(np.abs(self.value))//np.log(1e3)) if self.value != 0 else 0
 
     def __repr__(self):
         return f'{self.unit}{self.value / 10 ** (3 * self.mode):0.2f} {"".join(self.mode * ["M"])}' \

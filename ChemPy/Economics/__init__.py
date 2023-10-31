@@ -100,6 +100,7 @@ class CapitalCostBuildUp(ReportSection):
         self.verticalVessels = [i for i in filter(lambda m: isinstance(m,VerticalVessel),self.mods)]
         self.horizontalVessels = [i for i in filter(lambda m: isinstance(m,HorizontalVessel),self.mods)]
         self.reactors = [i for i in filter(lambda m: isinstance(m,(HorizontalReactor,VerticalReactor)),self.mods)]
+        self.tanks = [i for i in filter(lambda m: isinstance(m,Tank),self.mods)]
 
         self.CE = CE
         self.totPurchCost = sum([m.purchCost for m in self.mods])
@@ -121,7 +122,7 @@ class CapitalCostBuildUp(ReportSection):
             'Steam': (sum([m.steamStream.flow for m in self.hxs]),
                       Currency(930*sum([m.steamStream.flow for m in self.hxs])**0.81).update_cost(self.CE,567)),
             'TW': (sum([m.twMassFlow for m in self.hxs]),
-                   Currency(1100*(sum([m.twMassFlow] for m in self.hxs)/500)**0.68).update_cost(self.CE,567)),
+                   Currency(1100*(sum([m.twMassFlow for m in self.hxs])/500)**0.68).update_cost(self.CE,567)),
             'Elec': (sum([m.Pc for m in self.pumps])+sum([m.Pc for m in self.comps]),
                      Currency(2900000*((sum([m.Pc for m in self.pumps])+sum([m.Pc for m in self.comps])/1000)**0.83)).update_cost(self.CE,567))
         }
@@ -163,6 +164,7 @@ class CapitalCostBuildUp(ReportSection):
             self.write_row(sh,['HEAT EXCHANGERS'],True)
             self.write_row(sh,HeatExchanger.xlHeader,True)
             for h in self.hxs: self.write_row(sh,h.generate_row_xl())
+            self.row+=1
 
         if len(self.fHeat)>0:
             self.write_row(sh,['FIRED HEATERS'],True)
@@ -178,15 +180,41 @@ class CapitalCostBuildUp(ReportSection):
 
         if len(self.verticalVessels)>0:
             self.write_row(sh,['Vertical Vessels'],True)
-            self.write_row(sh,[VerticalVessel.xlHeader],True)
+            self.write_row(sh,VerticalVessel.xlHeader,True)
             for vves in self.verticalVessels: self.write_row(sh,vves.generate_row_xl())
             self.row+=1
 
         if len(self.horizontalVessels)>0:
             self.write_row(sh,['Horizontal Vessels'],True)
-            self.write_row(sh,[HorizontalVessel.xlHeader],True)
+            self.write_row(sh,HorizontalVessel.xlHeader,True)
             for hves in self.horizontalVessels: self.write_row(sh,hves.generate_row_xl())
             self.row+=1
+
+        if len(self.tanks)>0:
+            self.write_row(sh,['Tanks'],True)
+            self.write_row(sh,Tank.xlHeader,True)
+            for t in self.tanks: self.write_row(sh,t.generate_row_xl())
+            self.row+=1
+
+        self.write_row(sh,['Based on CE Index',self.CE],[True,False])
+        self.write_row(sh,['Total Escalated Bare Module Cost',self.totEscBmCost],[True,False])
+        self.write_row(sh,['Initial Catalyst',self.catalystCost],[True,False])
+        self.write_row(sh,['Instruments and Controls',self.instrumentAndControls],[True,False])
+        self.write_row(sh,['Total Bare Module Cost',self.TBM],True)
+        self.write_row(sh,['Site Prep',self.sitePrep],[True,False])
+        self.write_row(sh,['Service',self.service],[True,False])
+        self.write_row(sh,['Steam',self.allocated['Steam'][1]],[True,False])
+        self.write_row(sh,['TW',self.allocated['TW'][1]],[True,False])
+        self.write_row(sh,['Electricity',self.allocated['Elec'][1]],[True,False])
+        self.write_row(sh,['Direct Permanent Investment',self.DPI],True)
+        self.write_row(sh,['Land',self.land],[True,False])
+        self.write_row(sh,['Royalties',self.royalties],[True,False])
+        self.write_row(sh,['Startup',self.startup],[True,False])
+        self.write_row(sh,['Total Permanent Investment',self.TPI],True)
+        self.write_row(sh,['Working Capital',self.wc],[True,False])
+        self.write_row(sh,['Total Capital Investment',self.TCI],True)
+
+        sh.autofit(axis='columns')
 
         return sh
 
