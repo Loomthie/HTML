@@ -16,8 +16,11 @@ class Report:
         self.wb = xl.Book()
 
         self.capitalCost = CapitalCostBuildUp(self.modules)
-        self.capitalCostSheet = self.capitalCost.build_sheet(self.wb,'Capital-IF','CAPITAL COST BUILDUP -- IF',
-                                                             self.reportName)
+        # self.capitalCostSheet = self.capitalCost.build_sheet(self.wb,'Capital-IF','CAPITAL COST BUILDUP -- IF',
+        #                                                      self.reportName)
+        self.capitalFormSheet = self.capitalCost.build_sheet_with_formulas(self.wb,'Capital-IF w Formula'
+                                                                           ,'CAPITAL COST BUILDUP -- IF',
+                                                                           self.reportName)
 
     def __build_sheet_header(self,sh,title):
         sh.cells[0, 0].value = title
@@ -65,7 +68,7 @@ class ReportSection:
 
         return sh
 
-    def write_row(self,sh:xl.Sheet,cols:list,bold:bool|list=False):
+    def write_row(self,sh:xl.Sheet,cols:list,bold:bool|list[bool]=False):
 
         for c in range(len(cols)):
 
@@ -79,10 +82,22 @@ class ReportSection:
                 sh.cells[self.row,c].font.bold = bold[c]
         self.row += 1
 
-    def write_row_form(self,sh:xl.Sheet,forms:list,bold=False):
+    def write_row_form(self,sh:xl.Sheet,forms:list,curr_form:list[bool],bold:bool|list[bool]=False):
         for c in range(len(forms)):
             sh.cells[self.row, c].formula = forms[c]
-            sh.cells[self.row, c].font.bold = bold
+            if type(bold) is bool:
+                sh.cells[self.row, c].font.bold = bold
+            elif type(bold) is list:
+                sh.cells[self.row, c].font.bold = bold[c]
+            if curr_form[c]:
+                try:
+                    mode = int(np.log(float(sh.cells[self.row,c].value))//np.log(1e3))
+                except BaseException as err:
+                    print(err)
+                    print(sh.cells[self.row,c].value)
+                    print(forms[c])
+                    raise BaseException
+                sh.cells[self.row,c].number_format = f'$#{"".join(mode*[","])}.00 \"{"".join(mode*["M"])}\"'
         self.row += 1
 
 
@@ -151,7 +166,7 @@ class CapitalCostBuildUp(ReportSection):
         if len(self.pumps) > 0:
             self.write_row(sh,['PUMPS'],True)
             self.write_row(sh, Pump.xlHeader, True)
-            for p in self.pumps: self.write_row(sh,p.generate_row_xl())
+            for p in self.pumps:self.write_row(sh,p.generate_row_xl())
             self.row+=1
 
         if len(self.comps) > 0:
@@ -217,6 +232,45 @@ class CapitalCostBuildUp(ReportSection):
         sh.autofit(axis='columns')
 
         return sh
+
+    def build_sheet_with_formulas(self,wb:xl.Book,sh_name,title,report_title):
+        sh=super().build_sheet(wb,sh_name,title,report_title)
+
+        self.row =4
+
+        if len(self.pumps) > 0:
+            self.write_row(sh,['PUMPS'],True)
+            self.write_row(sh, Pump.xlHeader, True)
+            for p in self.pumps:self.write_row_form(sh,*p.generate_formulas_xl(sh,self.row+1))
+            self.row+=1
+
+        if len(self.comps) > 0:
+            self.write_row(sh,['COMPRESSORS'],True)
+            self.write_row(sh,Compressor.xlHeader,True)
+            for c in self.comps: self.write_row_form(sh,*c.generate_formulas_xl(sh,self.row+1))
+            self.row += 1
+
+        if len(self.hxs)>0:
+            self.write_row(sh,['HEAT EXCHANGERS'],True)
+            self.write_row(sh,HeatExchanger.xlHeader,True)
+            for h in self.hxs: self.write_row_form(sh,*h.generate_formulas_xl(sh,self.row+1))
+            self.row+=1
+
+        if len(self.fHeat)>0:
+            self.write_row(sh,['FIRED HEATERS'],True)
+            self.write_row(sh,FiredHeater.xlHeader,True)
+            for f in self.fHeat: self.write_row_form(sh,*f.generate_formulas_xl(sh,self.row+1))
+            self.row += 1
+
+        if len(self.columns)>0:
+            self.write_row(sh,['COLUMNS'],True)
+            self.write_row(sh,Column.xlHeader,True)
+            for c in self.columns: self.write_row_form(sh,*c.generate_formulas_xl(sh,self.row+1))
+            self.row +=1
+
+        return sh
+
+
 
 
 class OperatingCosts(ReportSection):

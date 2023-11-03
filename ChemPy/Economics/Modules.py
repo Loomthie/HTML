@@ -1,5 +1,6 @@
 from ChemPy.Economics.Currency import Currency
 from ChemPy.Economics.Materials import Catalyst,SteamStream
+import xlwings as xl
 import numpy as np
 
 
@@ -20,8 +21,13 @@ class Module:
         self.purchCost = self.purch_cost_calc()
         self.bmCost = self.bm_cost_calc()
 
+        self.xlNameRange = self.name.replace('-', '')
+
     def generate_row_xl(self):
         return self.baseCost,self.purchCost,self.bmCost
+
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+        return []
 
     @Currency.econ_func
     def base_cost_calc(self):
@@ -41,7 +47,7 @@ class Pump(Module):
 
     Fbm = 3.30
     xlHeader=['Name','Flow','Head','Size Factor','Pump Cost','Pump Power','Pump Efficiency','Brake Power',
-              'Motor Efficiency','Power Consumption','Motor Cost','Cbase','Cp','Fbm','Fm','Fd','Fp','Cbm']
+              'Motor Efficiency','Power Consumption','Motor Cost','Cb','Cp','Fbm','Fm','Fd','Fp','Cbm']
 
     def __init__(self,name:str,desc:str,flow_rate:float,pump_power:float,type_factor_pump:float=1.0,
                  type_factor_motor:float=1.0,**kwargs):
@@ -68,6 +74,21 @@ class Pump(Module):
     def generate_row_xl(self):
         return [self.name,self.Q,'\'--','\'--',self.pumpPurchCost,self.Pt,self.etaP,self.Pb,self.etaM,self.Pc,self.motorPurchCost,
                 self.baseCost,self.purchCost,self.Fbm,self.Fd,self.Fm,self.Fp,self.bmCost]
+
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+
+        sh.range(f'R{row}').name = f'BM_{self.xlNameRange}'
+        sh.range(f'M{row}').name = f'CP_{self.xlNameRange}'
+
+        currency = [0,0,0,0,1,0,0,0,0,0,1,1,0,0,0,0,0,1]
+
+        return [self.name,self.Q,'\'--',f'\'--',
+                f'=EXP(12.1656-1.1448*LN(D{row})+0.0862*LN(D{row})^2)*{self.Ft}*{self.Fm}',
+                self.Pt,f'=-0.316+0.24015*LN(B{row})-0.01199*LN(B{row})^2',f'=F{row}/G{row}',
+                f'=0.8+0.0319*LN(H{row})-0.00182*LN(H{row})^2',f'=F{row}/G{row}/I{row}',
+                f'=EXP(5.9332+0.16829*LN(J{row})-0.110056*LN(J{row})^2+0.071413*LN(J{row})^3-.0063788*LN(J{row})^4)*{self.motorFt}',
+                f'=E{row}/{self.Ft}/{self.Fm}+K{row}/{self.motorFt}',f'=E{row}+K{row}',self.Fbm,self.Fm,self.Fd,self.Fp,
+                f'=M{row}*(N{row}+(O{row}*P{row}*Q{row}-1))'],currency
 
     @Currency.econ_func
     def motor_base_cost_calc(self):
@@ -114,6 +135,12 @@ class CentrifugalPump(Pump):
         res[3] = self.S
         return res
 
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+        res = super().generate_formulas_xl(sh,row)
+        res[0][2]=self.H
+        res[0][3]=f'=B{row}*SQRT(C{row})'
+        return res
+
 
 class ExternalGearPump(Pump):
 
@@ -129,7 +156,8 @@ class ReciprocatingPlungerPump(Pump):
         return np.exp(7.9361+0.26986*np.log(self.Pb)+0.06718*np.log(self.Pb)**2)
 # endregion
 
-#region Compressor
+
+# region Compressor
 class Compressor(Module):
 
     xlHeader = ['Name','Pt','ηP','ηM','Pc','Cb','Cp','Fbm','Fm','Fd','Fp','Cbm']
@@ -151,12 +179,40 @@ class Compressor(Module):
         return [self.name,self.Pt,self.etaP,self.etaM,self.Pc,self.baseCost,self.purchCost,
                 self.Fbm,self.Fm,self.Fd,self.Fp,self.bmCost]
 
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+
+        a = self.name
+        b = self.Pt
+        c = self.etaP
+        d = self.etaM
+        e = f'=B{row}/C{row}/D{row}'
+        f = '' # i = 5
+        g = f'=F{row}*{self.Fm}*{self.Fd}'
+        h = self.Fbm
+        i = self.Fm
+        j = self.Fd
+        k = self.Fp
+        l = f'=G{row}*(H{row}+(I{row}*J{row}*K{row}-1))'
+
+        sh.range(f'G{row}').name = f'CP_{self.xlNameRange}'
+        sh.range(f'L{row}').name = f'BM_{self.xlNameRange}'
+
+        cur = [0,0,0,0,0,1,1,0,0,0,0,1]
+        res = [a,b,c,d,e,f,g,h,i,j,k,l]
+
+        return res,cur
+
 
 class CentrifugalCompressor(Compressor):
 
     @Currency.econ_func
     def base_cost_calc(self):
         return np.exp(9.1553+0.63*np.log(self.Pc))
+
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+        res,cur = super().generate_formulas_xl(sh,row)
+        res[5] = f'=EXP(9.1553+0.63*LN(E{row}))'
+        return res,cur
 
 
 class ReciprocatingCompressor(Compressor):
@@ -165,13 +221,23 @@ class ReciprocatingCompressor(Compressor):
     def base_cost_calc(self):
         return np.exp(4.6762+1.23*np.log(self.Pc))
 
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+        res,cur = super().generate_formulas_xl(sh,row)
+        res[5]=f'=EXP(4.6762+1.23*LN(E{row}))'
+        return res,cur
+
 
 class ScrewCompressor(Compressor):
 
     @Currency.econ_func
     def base_cost_calc(self):
         return np.exp(8.2496+0.7243*np.log(self.Pc))
-#endregion
+
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+        res,cur = super().generate_formulas_xl(sh,row)
+        res[5]=f'=EXP(8.2496+0.7243*LN(E{row}))'
+        return res,cur
+# endregion
 
 #region Fan
 class Fan(Module):
@@ -244,7 +310,9 @@ class HeatExchanger(Module):
     twMassFlow = 0  # lb/h
     steamStream = SteamStream(0, 0, 0)
 
-    xlHeader = ['Name','P','Fp','Tube Length','Area','Fl','Cb','Cp','Fbm','Fm','Fd','Cbm']
+    baseCostXlFormula = ''
+
+    xlHeader = ['Name','P','Fp','Tube Length','Area','Fl','Fbm','Fm','Fd','Cb','Cp','Cbm']
 
     def __init__(self,name,desc,tube_length,pressure,area,a=0.0,b=0.0,**kwargs):
         for key,value in kwargs.items():self.__dict__[key]=value
@@ -266,8 +334,28 @@ class HeatExchanger(Module):
         return self.Fp*self.Fm*self.Fl*self.baseCost
 
     def generate_row_xl(self):
-        return [self.name,self.P,self.Fp,self.tubeLength,self.A,self.Fl,self.baseCost,self.purchCost,
-                self.Fbm,self.Fm,self.Fd,self.bmCost]
+        return [self.name,self.P,self.Fp,self.tubeLength,self.A,self.Fl,
+                self.Fbm,self.Fm,self.Fd,self.baseCost,self.purchCost,self.bmCost]
+
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+
+        a = self.name
+        b = self.P
+        c = self.Fp
+        d = self.tubeLength
+        e = self.A
+        f = self.Fl
+        g = self.Fbm
+        h = self.Fm
+        i = self.Fd
+        j = self.baseCostXlFormula.format(row=row)
+        k = f'=C{row}*h{row}*F{row}*j{row}'
+        l = f'=k{row}*(g{row}+(h{row}*h{row}*c{row}-1))'
+
+        res = [a,b,c,d,e,f,g,h,i,j,k,l]
+        cur = [0,0,0,0,0,0,0,0,0,1,1,1]
+
+        return res,cur
 
     @staticmethod
     def fl_func(L):
@@ -283,10 +371,12 @@ class HeatExchanger(Module):
         def fl_corr(L):
             return res_fl[0] + res_fl[1] / (L + res_fl[2])
 
-        return fl_corr(L)
+        return round(fl_corr(L),2)
 
 
 class FloatingHeadHx(HeatExchanger):
+
+    baseCostXlFormula = '=EXP(12.0310-0.8709*LN(E{row})+0.09005*LN(E{row})^2)'
 
     @Currency.econ_func
     def base_cost_calc(self):
@@ -296,6 +386,8 @@ class FloatingHeadHx(HeatExchanger):
 class FixedHeadHx(HeatExchanger):
 
     Fd=0.85
+
+    baseCostXlFormula = '=EXP(11.4185-0.9228*LN(E{row})+0.09861*LN(E{row})^2)'
 
     @Currency.econ_func
     def base_cost_calc(self):
@@ -312,6 +404,7 @@ class UtubeHx(HeatExchanger):
 class KettleHx(HeatExchanger):
 
     Fd = 1.35
+    baseCostXlFormula = '=EXP(12.3310-0.8709*LN(E{row})+0.09005*LN(E{row})^2)'
 
     @Currency.econ_func
     def base_cost_calc(self):
@@ -322,7 +415,7 @@ class FiredHeater(Module):
 
     ngFlow = 0
     Fbm = 2.19
-    xlHeader = ['Name','Fp','Q','Cb','Cp','Fbm','Fm','Fd','Cbm']
+    xlHeader = ['Name','P','Fp','Q','Fbm','Fm','Fd','Cb','Cp','Cbm']
 
     def __init__(self,name,desc,heat_duty,pressure,**kwargs):
         for key,value in kwargs.items(): self.__dict__[key]=value
@@ -340,8 +433,26 @@ class FiredHeater(Module):
         return self.Fp*self.Fm*self.baseCost
 
     def generate_row_xl(self):
-        return [self.name,self.Fp,self.Q,self.baseCost,self.purchCost,
-                self.Fbm,self.Fm,self.Fd,self.bmCost]
+        return [self.name,self.P,self.Fp,self.Q,
+                self.Fbm,self.Fm,self.Fd,self.baseCost,self.purchCost,self.bmCost]
+
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+
+        a = self.name
+        b = self.P
+        c = f'=0.986-0.0035*(b{row}/500)+0.0175*(b{row}/500)^2'
+        d = self.Q
+        e = self.Fbm
+        f = self.Fm
+        g = self.Fd
+        h = f'=EXP(-0.15241+0.785*LN(d{row}))'
+        i = f'=c{row}*f{row}*h{row}'
+        j = f'=i{row}*(e{row}+(c{row}*f{row}*g{row}-1))'
+
+        res = [a,b,c,d,e,f,g,h,i,j]
+        cur = [0,0,0,0,0,0,0,1,1,1]
+
+        return res,cur
 # endregion
 
 
@@ -378,7 +489,7 @@ class Vessel(Module):
 
 class HorizontalVessel(Vessel):
 
-    xlHeader = ['Name','D','W','Cv','Cpl','Fbm','Fd','Fm','Fp','Cbm']
+    xlHeader = ['Name','D','W','Fbm','Fd','Fm','Fp','Cv','Cpl','Cbm']
     Fbm=3.05
 
     @Currency.econ_func
@@ -390,13 +501,34 @@ class HorizontalVessel(Vessel):
         return 2275*self.Di**0.2094
 
     def generate_row_xl(self):
-        return [self.name,self.Di,self.W,self.Cv,self.Cpl,self.Fbm,self.Fd,self.Fm,self.Fp,self.bmCost]
+        return [self.name,self.Di,self.W,self.Fbm,self.Fd,self.Fm,self.Fp,self.Cv,self.Cpl,self.bmCost]
+
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+
+        sh.range(f'H{row}').name=f'CP_{self.xlNameRange}'
+        sh.range(f'J{row}').name=f'BM_{self.xlNameRange}'
+
+        a = self.name
+        b = self.Di
+        c = self.W
+        d = self.Fbm
+        e = self.Fd
+        f = self.Fm
+        g = self.Fp
+        h = f'=EXP(5.6336+0.4599*LN(c{row})+.00582*LN(c{row})^2)*f{row}'
+        i = f'=2275*b{row}^0.2094'
+        j = f'=h{row}/f{row}*(d{row}+(e{row}*f{row}*g{row}-1))+i{row}'
+
+        res = [a,b,c,d,e,f,g,h,i,j]
+        cur = [0,0,0,0,0,0,0,1,1,1]
+
+        return res,cur
 
 
 class VerticalVessel(Vessel):
     Fbm = 4.16
 
-    xlHeader = ['Name','D','L','W','Cv','Cpl','Fbm','Fm','Fd','Fp','Cbm']
+    xlHeader = ['Name','D','L','W','Fbm','Fm','Fd','Fp','Cv','Cpl','Cbm']
 
     def __init__(self,name,desc,weight,inside_diameter,length,**kwargs):
 
@@ -406,22 +538,44 @@ class VerticalVessel(Vessel):
 
     @Currency.econ_func
     def shell_cost_calc(self):
-        return np.exp(7.1390+0.18255*np.log(self.W)+0.02297*np.log(self.W)**2)
+        return np.exp(7.1390+0.18255*np.log(self.W)+0.02297*np.log(self.W)**2)*self.Fm
 
     @Currency.econ_func
     def pl_cost_calc(self):
         return 410*self.Di**0.7396*self.L**0.70684
 
     def generate_row_xl(self):
-        return [self.name,self.Di,self.L,self.W,self.Cv,self.Cpl,self.Fbm,self.Fm,
-                self.Fd,self.Fp,self.bmCost]
+        return [self.name,self.Di,self.L,self.W,self.Fbm,self.Fm,
+                self.Fd,self.Fp,self.Cv,self.Cpl,self.bmCost]
+
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+
+        sh.range(f'i{row}').name=f'CP_{self.xlNameRange}'
+        sh.range(f'k{row}').name=f'BM_{self.xlNameRange}'
+
+        a = self.name
+        b = self.Di
+        c = self.L
+        d = self.W
+        e = self.Fbm
+        f = self.Fm
+        g = self.Fd
+        h = self.Fp
+        i = f'=EXP(7.139+0.18255*LN(d{row})+0.02297*LN(d{row})^2)*f{row}'
+        j = f'=410*b{row}^0.7396*c{row}^0.70684'
+        k = f'=i{row}/f{row}*(e{row}+(f{row}*g{row}*h{row}-1))+j{row}'
+
+        res = [a,b,c,d,e,f,g,h,i,j,k]
+        cur = [0,0,0,0,0,0,0,0,1,1,1]
+
+        return res,cur
 
 
 class Column(Module):
 
     Fbm = 4.16
-    xlHeader = ['Name','D','L','W','N','Fnt','Cv','Cpl','Ctrays','Ctower','Fbm (Trays)','Fbm (Tower)',
-                'Fm','Fd','Fp','Cbm']
+    xlHeader = ['Name','D','L','W','N','Fnt','Fbm (Trays)','Fbm (Tower)',
+                'Fm','Fd','Fp','Cv','Cpl','Ctrays','Ctower','Cbm']
 
     class Trays:
 
@@ -472,11 +626,38 @@ class Column(Module):
         return self.Cv+self.Cpl+self.Ctrays
 
     def bm_cost_calc(self):
-        return self.Cv*(self.Fbm+(self.Fm*self.Fd*self.Fp-1))+self.Cpl+self.Ctrays*self.trays.Fbm
+        return self.Cv/self.Fm*(self.Fbm+(self.Fm*self.Fd*self.Fp-1))+self.Cpl+self.Ctrays*self.trays.Fbm
 
     def generate_row_xl(self):
-        return [self.name,self.D,self.L,self.W,self.trays.N,self.trays.Fnt,self.Cv,self.Cpl,self.Ctrays,
-                self.purchCost,self.trays.Fbm,self.Fbm,self.Fm,self.Fd,self.Fp,self.bmCost]
+        return [self.name,self.D,self.L,self.W,self.trays.N,self.trays.Fnt,self.trays.Fbm,self.Fbm,self.Fm,self.Fd,
+                self.Fp,self.Cv,self.Cpl,self.Ctrays,self.purchCost,self.bmCost]
+
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+
+        sh.range(f'o{row}').name = f'CP_{self.xlNameRange}'
+        sh.range(f'p{row}').name = f'BM_{self.xlNameRange}'
+
+        a = self.name
+        b = self.D
+        c = self.L
+        d = self.W
+        e = self.trays.N
+        f = f'=MAX(1,2.25/1.0414^e{row})'
+        g = self.trays.Fbm
+        h = self.Fbm
+        i = self.Fm
+        j = self.Fd
+        k = self.Fp
+        l = f'=EXP(10.5449-0.4672*LN(d{row})+0.05482*LN(d{row})^2)*i{row}'
+        m = f'=341*b{row}^0.63316*c{row}^0.80161'
+        n = f'=468*EXP(0.1482*b{row})*{self.trayFactor}'
+        o = f'=l{row}+m{row}+n{row}'
+        p = f'=l{row}/i{row}*(h{row}+(i{row}*j{row}*k{row}-1))+m{row}+n{row}*g{row}'
+
+        res = [a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p]
+        cur = [0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1]
+
+        return res,cur
 
 
 class HorizontalReactor(HorizontalVessel):
