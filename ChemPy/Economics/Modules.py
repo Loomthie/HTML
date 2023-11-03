@@ -339,6 +339,9 @@ class HeatExchanger(Module):
 
     def generate_formulas_xl(self,sh:xl.Sheet,row):
 
+        sh.range(f'k{row}').name = f'CP_{self.xlNameRange}'
+        sh.range(f'l{row}').name = f'BM_{self.xlNameRange}'
+
         a = self.name
         b = self.P
         c = self.Fp
@@ -437,6 +440,9 @@ class FiredHeater(Module):
                 self.Fbm,self.Fm,self.Fd,self.baseCost,self.purchCost,self.bmCost]
 
     def generate_formulas_xl(self,sh:xl.Sheet,row):
+
+        sh.range(f'i{row}').name=f'CP_{self.xlNameRange}'
+        sh.range(f'j{row}').name=f'BM_{self.xlNameRange}'
 
         a = self.name
         b = self.P
@@ -680,7 +686,9 @@ class VerticalReactor(VerticalVessel):
 # region Tanks
 class Tank(Module):
 
-    xlHeader = ['Name','Volume','Ctank','Fbm','Fm','Fd','Fp','Cbm']
+    xlHeader = ['Name','Volume','Fbm','Fm','Fd','Fp','Ctank','Cbm']
+
+    xlPurchCostFormula = ''
 
     corrCE = 567
     Fbm=4.16
@@ -693,11 +701,32 @@ class Tank(Module):
         super().__init__(name,desc)
 
     def generate_row_xl(self):
-        return [self.name,self.volume,self.purchCost,self.Fbm,self.Fm,
-                self.Fd,self.Fp,self.bmCost]
+        return [self.name,self.volume,self.Fbm,self.Fm,
+                self.Fd,self.Fp,self.purchCost,self.bmCost]
+
+    def generate_formulas_xl(self,sh:xl.Sheet,row):
+
+        sh.range(f'g{row}').name=f'CP_{self.xlNameRange}'
+        sh.range(f'h{row}').name=f'BM_{self.xlNameRange}'
+
+        a = self.name
+        b = self.volume
+        c = self.Fbm
+        d = self.Fm
+        e = self.Fd
+        f = self.Fp
+        g = self.xlPurchCostFormula.format(row=row)
+        h = f'=g{row}*(c{row}+(e{row}*f{row}*d{row}-1))'
+
+        res = [a,b,c,d,e,f,g,h]
+        cur = [0,0,0,0,0,0,1,1]
+
+        return res,cur
 
 
 class OpenTank(Tank):
+
+    xlPurchCostFormula = '=18*b{row}^0.73'
 
     @Currency.econ_func
     def purch_cost_calc(self):
@@ -705,6 +734,7 @@ class OpenTank(Tank):
 
 
 class ConeRoofTank(Tank):
+    xlPurchCostFormula = '=265*b{row}^0.513'
 
     @Currency.econ_func
     def purch_cost_calc(self):
@@ -713,12 +743,16 @@ class ConeRoofTank(Tank):
 
 class FloatingRoofTank(Tank):
 
+    xlPurchCostFormula = '=475*b{row}^0.507'
+
     @Currency.econ_func
     def purch_cost_calc(self):
         return 475*self.volume**.507
 
 
 class SphericalLPTank(Tank):
+
+    xlPurchCostFormula = '=68*b{row}^0.72'
 
     @Currency.econ_func
     def purch_cost_calc(self):
@@ -727,12 +761,16 @@ class SphericalLPTank(Tank):
 
 class SphericalHPTank(Tank):
 
+    xlPurchCostFormula = '=53*b{row}^0.78'
+
     @Currency.econ_func
     def purch_cost_calc(self):
         return 53*self.volume**0.78
 
 
 class GasHoldersTank(Tank):
+
+    xlPurchCostFormula = '=3595*(b{row}*7.48052)^0.43'
 
     @Currency.econ_func
     def purch_cost_calc(self):

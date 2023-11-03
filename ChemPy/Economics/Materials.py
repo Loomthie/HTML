@@ -57,6 +57,7 @@ class RawMaterial:
     def h_cost(self,hours:float):
         return self.value * hours
 
+
 class Catalyst:
 
     def __init__(self,name,rate:Currency,amount):

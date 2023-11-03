@@ -1,9 +1,9 @@
-from setuptools import setup
+from setuptools import setup,find_packages
 
 setup(
-    name='ChemPy_v2',
+    name='ChemPy',
     version='0.1.2',
-    packages=['ChemPy'],
+    packages=find_packages(),
     url='',
     license='',
     author='Loomthie',

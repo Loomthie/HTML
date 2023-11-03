@@ -16,8 +16,8 @@ class Report:
         self.wb = xl.Book()
 
         self.capitalCost = CapitalCostBuildUp(self.modules)
-        # self.capitalCostSheet = self.capitalCost.build_sheet(self.wb,'Capital-IF','CAPITAL COST BUILDUP -- IF',
-        #                                                      self.reportName)
+        self.capitalCostSheet = self.capitalCost.build_sheet(self.wb,'Capital-IF','CAPITAL COST BUILDUP -- IF',
+                                                             self.reportName)
         self.capitalFormSheet = self.capitalCost.build_sheet_with_formulas(self.wb,'Capital-IF w Formula'
                                                                            ,'CAPITAL COST BUILDUP -- IF',
                                                                            self.reportName)
@@ -63,7 +63,7 @@ class ReportSection:
         sh.cells[1,0].value = report_title
         sh.cells[1,0].font.bold = True
 
-        sh.cells[2,0].value = '\'UPDATED ON '+datetime.date.today().strftime('%d %B %Y')
+        sh.cells[2,0].value = '\'UPDATED ON '+datetime.date.today().strftime('%d %B %Y').upper()
         sh.cells[2,0].font.bold = True
 
         return sh
@@ -267,6 +267,57 @@ class CapitalCostBuildUp(ReportSection):
             self.write_row(sh,Column.xlHeader,True)
             for c in self.columns: self.write_row_form(sh,*c.generate_formulas_xl(sh,self.row+1))
             self.row +=1
+
+        if len(self.verticalVessels)>0:
+            self.write_row(sh,['Vertical Vessels'],True)
+            self.write_row(sh,VerticalVessel.xlHeader,True)
+            for vves in self.verticalVessels: self.write_row_form(sh,*vves.generate_formulas_xl(sh,self.row+1))
+            self.row+=1
+
+        if len(self.horizontalVessels)>0:
+            self.write_row(sh,['Horizontal Vessels'],True)
+            self.write_row(sh,HorizontalVessel.xlHeader,True)
+            for hves in self.horizontalVessels: self.write_row_form(sh,*hves.generate_formulas_xl(sh,self.row+1))
+            self.row+=1
+
+        if len(self.tanks)>0:
+            self.write_row(sh,['Tanks'],True)
+            self.write_row(sh,Tank.xlHeader,True)
+            for t in self.tanks: self.write_row_form(sh,*t.generate_formulas_xl(sh,self.row+1))
+            self.row+=1
+
+        self.row += 4
+        self.write_row(sh,['Projected Cost Index','','',self.CE],True)
+        sh.range(f'D{self.row}').name = 'CE'
+        self.row+=1
+        self.write_row(sh,['','Correlation Cost (CE=567)','=TEXTJOIN(" ",TRUE,"Escalated Cost (CE=",CE,")")'],True)
+        self.write_row_form(sh,['Cp',f'={"+".join([f"CP_{a.xlNameRange}" for a in self.mods])}',f'=b{self.row+1}*CE/567'],
+                            [False,True,True],[True,False,True])
+        sh.range(f'c{self.row}').name = 'Cp'
+        self.write_row_form(sh,['Cbm',f'={"+".join([f"BM_{a.xlNameRange}" for a in self.mods])}',f'=b{self.row+1}*CE/567'],
+                            [False,True,True],[True,False,True])
+        sh.range(f'c{self.row}').name = 'Cbm'
+        self.row+=1
+        self.write_row(sh,['','Mass','Rate','Cost'],True)
+        self.reactors:list[VerticalReactor | HorizontalReactor]
+        if len(self.reactors)>0:
+            start_row = self.row+1
+            for cat in [r.catalyst for r in self.reactors]:
+                self.write_row_form(sh,[cat.name,cat.amount,cat.rate,f'=b{self.row+1}*c{self.row+1}'],[False,False,True,True])
+            end_row = self.row
+            self.write_row_form(sh,['','','Total Initial Catalyst Cost',f'=SUM(d{start_row}:d{end_row})'],
+                                [False,False,False,True],True)
+        else:
+            self.write_row(sh,['Initial Catalyst Cost','','',Currency(0)],True)
+        sh.range(f'd{self.row}').name = 'Ccat'
+        self.row += 1
+        self.write_row_form(sh,['Instruments and Controls','55%','Cp',f'=b{self.row+1}*Cp'],[False,False,False,True])
+        sh.range(f'd{self.row}').name = 'InstControls'
+        self.write_row_form(sh,['Total Bare Module Cost','','','=Cbm+Ccat+InstControls'],[False,False,False,True],True)
+        sh.range(f'd{self.row}').name = 'TBM'
+
+
+
 
         return sh
 
